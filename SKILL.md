@@ -48,7 +48,11 @@ Returns: `{"docId":"xxx","title":"..."}` — extract docId for subsequent operat
 
 ### Write markdown to a doc (replaces entire body)
 ```bash
+# Inline content
 affine-cli write_doc_from_markdown '{"docId":"abc123","markdown":"# Heading\n\nContent here."}'
+
+# From a file (recommended for large docs — avoids shell quoting issues)
+affine-cli write_doc_from_markdown '{"docId":"abc123"}' --file /path/to/content.md
 ```
 
 ### Update a section (str_replace style — must match exactly once)

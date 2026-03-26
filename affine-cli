@@ -3,15 +3,23 @@
 # Eliminates 30K tokens of schema overhead from agent startup context.
 #
 # Usage: affine-cli <tool_name> '<json_args>'
-# Example: affine-cli search_docs '{"keyword":"design doc"}'
-#          affine-cli read_doc_as_markdown '{"docId":"abc123"}'
-#          affine-cli create_doc '{"title":"My Doc"}'
-#          affine-cli list_folder_tree '{}'
+#        affine-cli write_doc_from_markdown '{"docId":"abc"}' --file /path/to/doc.md
+#
+# --file flag: reads file content and injects as "markdown" field in args.
+# Useful for write_doc_from_markdown with large files.
 
 set -euo pipefail
 
 TOOL="${1:?Usage: affine-cli <tool_name> '<json_args>'}"
 ARGS="${2:-\{\}}"
+FILE_PATH=""
+
+# Parse --file flag
+for i in "$@"; do
+  if [[ "$i" == "--file" ]]; then
+    shift; shift; FILE_PATH="$1"; break
+  fi
+done
 
 # Load env from dedicated config file
 if [ -z "${AFFINE_BASE_URL:-}" ] && [ -f "$HOME/.kiro/affine-env" ]; then
@@ -22,8 +30,13 @@ fi
 exec python3 -c "
 import json, sys, subprocess
 
-tool, args_str = sys.argv[1], sys.argv[2]
+tool, args_str, file_path = sys.argv[1], sys.argv[2], sys.argv[3]
 args = json.loads(args_str)
+
+# If --file provided, read file and inject as 'markdown' field
+if file_path:
+    with open(file_path, 'r') as f:
+        args['markdown'] = f.read()
 
 msgs = [
     json.dumps({'jsonrpc':'2.0','id':1,'method':'initialize','params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'affine-cli','version':'1.0.0'}}}),
@@ -51,4 +64,4 @@ for line in stdout.decode().strip().split('\n'):
 
 print('Error: no tool response received', file=sys.stderr)
 sys.exit(1)
-" "$TOOL" "$ARGS"
+" "$TOOL" "$ARGS" "$FILE_PATH"

@@ -62,8 +62,11 @@ affine-cli read_doc_as_markdown '{"docId":"abc123","blockOffset":5,"blockLimit":
 # Create a doc
 affine-cli create_doc '{"title":"My Doc"}'
 
-# Write content to a doc
+# Write content to a doc (inline)
 affine-cli write_doc_from_markdown '{"docId":"abc123","markdown":"# Hello\n\nContent here."}'
+
+# Write content from a file (recommended for large docs)
+affine-cli write_doc_from_markdown '{"docId":"abc123"}' --file /path/to/content.md
 
 # Update a section (str_replace style)
 affine-cli update_doc_markdown '{"docId":"abc123","old_markdown":"old text","new_markdown":"new text"}'
