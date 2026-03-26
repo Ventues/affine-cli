@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# affine-cli — call affine-mcp-server tools via one-shot MCP JSON-RPC.
+# Eliminates 30K tokens of schema overhead from agent startup context.
+#
+# Usage: affine-cli <tool_name> '<json_args>'
+# Example: affine-cli search_docs '{"keyword":"design doc"}'
+#          affine-cli read_doc_as_markdown '{"docId":"abc123"}'
+#          affine-cli create_doc '{"title":"My Doc"}'
+#          affine-cli list_folder_tree '{}'
+
+set -euo pipefail
+
+TOOL="${1:?Usage: affine-cli <tool_name> '<json_args>'}"
+ARGS="${2:-\{\}}"
+
+# Load env from dedicated config file
+if [ -z "${AFFINE_BASE_URL:-}" ] && [ -f "$HOME/.kiro/affine-env" ]; then
+  source "$HOME/.kiro/affine-env"
+fi
+
+# Build and send JSON-RPC via python (handles quoting + response parsing)
+exec python3 -c "
+import json, sys, subprocess
+
+tool, args_str = sys.argv[1], sys.argv[2]
+args = json.loads(args_str)
+
+msgs = [
+    json.dumps({'jsonrpc':'2.0','id':1,'method':'initialize','params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'affine-cli','version':'1.0.0'}}}),
+    json.dumps({'jsonrpc':'2.0','method':'notifications/initialized'}),
+    json.dumps({'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':tool,'arguments':args}}),
+]
+
+proc = subprocess.Popen(['affine-mcp'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+stdout, _ = proc.communicate(input=('\n'.join(msgs) + '\n').encode(), timeout=30)
+
+for line in stdout.decode().strip().split('\n'):
+    if not line.strip(): continue
+    try:
+        r = json.loads(line)
+        if r.get('id') == 2:
+            if 'error' in r:
+                print(f'Error: {r[\"error\"].get(\"message\",r[\"error\"])}', file=sys.stderr)
+                sys.exit(1)
+            for c in r.get('result',{}).get('content',[]):
+                if c.get('type') == 'text':
+                    print(c['text'])
+            sys.exit(0)
+    except json.JSONDecodeError:
+        pass
+
+print('Error: no tool response received', file=sys.stderr)
+sys.exit(1)
+" "$TOOL" "$ARGS"
