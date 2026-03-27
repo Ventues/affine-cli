@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # affine-cli — call affine-mcp-server tools via one-shot MCP JSON-RPC.
-# Eliminates 30K tokens of schema overhead from agent startup context.
+# Standalone: no external dependencies. Bundled server in ./server/index.js.
 #
 # Usage: affine-cli <tool_name> '<json_args>'
 #        affine-cli write_doc_from_markdown '{"docId":"abc"}' --file /path/to/doc.md
 #
 # --file flag: reads file content and injects as "markdown" field in args.
-# Useful for write_doc_from_markdown with large files.
 
 set -euo pipefail
 
@@ -21,6 +20,15 @@ for i in "$@"; do
   fi
 done
 
+# Resolve server path relative to this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVER="$SCRIPT_DIR/server/index.js"
+
+if [[ ! -f "$SERVER" ]]; then
+  echo "Error: bundled server not found at $SERVER" >&2
+  exit 1
+fi
+
 # Load env from dedicated config file
 if [ -z "${AFFINE_BASE_URL:-}" ] && [ -f "$HOME/.kiro/affine-env" ]; then
   source "$HOME/.kiro/affine-env"
@@ -30,7 +38,7 @@ fi
 exec python3 -c "
 import json, sys, subprocess
 
-tool, args_str, file_path = sys.argv[1], sys.argv[2], sys.argv[3]
+tool, args_str, file_path, server = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 args = json.loads(args_str)
 
 # If --file provided, read file and inject as 'markdown' field
@@ -44,7 +52,7 @@ msgs = [
     json.dumps({'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':tool,'arguments':args}}),
 ]
 
-proc = subprocess.Popen(['affine-mcp'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+proc = subprocess.Popen(['node', server], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 stdout, _ = proc.communicate(input=('\n'.join(msgs) + '\n').encode(), timeout=30)
 
 for line in stdout.decode().strip().split('\n'):
@@ -64,4 +72,4 @@ for line in stdout.decode().strip().split('\n'):
 
 print('Error: no tool response received', file=sys.stderr)
 sys.exit(1)
-" "$TOOL" "$ARGS" "$FILE_PATH"
+" "$TOOL" "$ARGS" "$FILE_PATH" "$SERVER"
