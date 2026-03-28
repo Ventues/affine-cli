@@ -52,7 +52,7 @@ affine-cli <tool_name> '<json_args>'
 affine-cli list_workspace_tree '{}'
 
 # Search docs
-affine-cli search_docs '{"keyword":"design doc"}'
+affine-cli search_docs '{"query":"design doc"}'
 
 # Read doc as markdown
 affine-cli export_doc_markdown '{"docId":"abc123"}'

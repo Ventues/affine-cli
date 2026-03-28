@@ -1,11 +1,11 @@
 # AFFiNE CLI Skill
 
-Use `affine-cli` via execute_bash for all AFFiNE operations. This replaces the AFFiNE MCP server — same tools, zero schema overhead at startup.
+Use `affine-cli` via execute_bash for all AFFiNE operations.
 
 ## When to Use
 
 - Reading, writing, or searching AFFiNE docs
-- Publishing docs for Founder review
+- Publishing docs for review
 - Creating design docs, research docs, or briefings
 - Managing comments on docs
 - Any AFFiNE operation
@@ -16,7 +16,7 @@ Use `affine-cli` via execute_bash for all AFFiNE operations. This replaces the A
 affine-cli <tool_name> '<json_args>'
 ```
 
-## ⚠️ Tool Name Reference (verified against affine-mcp)
+## Tool Name Reference
 
 The tool names below are the ACTUAL names. Do not guess — use this list.
 
@@ -61,7 +61,7 @@ Note: no headingsOnly or blockOffset support. For large docs, read the full mark
 
 ### Create a new doc
 ```bash
-affine-cli create_doc '{"title":"[AgentDeck] My Design Doc"}'
+affine-cli create_doc '{"title":"My Design Doc"}'
 # Returns: {"docId":"xxx","title":"..."} — extract docId for subsequent operations.
 ```
 
@@ -71,7 +71,6 @@ affine-cli create_doc '{"title":"[AgentDeck] My Design Doc"}'
 affine-cli replace_doc_with_markdown '{"docId":"abc123","markdown":"# Heading\n\nContent here."}'
 
 # From a file (recommended for large docs — avoids shell quoting issues)
-CONTENT=$(cat /path/to/content.md)
 affine-cli replace_doc_with_markdown "{\"docId\":\"abc123\",\"markdown\":$(python3 -c "import sys,json; print(json.dumps(open('/path/to/content.md').read()))")}"
 ```
 
@@ -151,14 +150,14 @@ affine-cli list_access_tokens '{}'
 affine-cli revoke_access_token '{"id":"token-uuid"}'
 ```
 
-## Workflow: Create and Publish a Design Doc
+## Workflow: Create and Publish a Doc
 
 ```bash
 # 1. Find the target folder
 affine-cli list_workspace_tree '{}'
 
 # 2. Create the doc
-RESULT=$(affine-cli create_doc '{"title":"[AgentDeck] My Feature — Design Spec"}')
+RESULT=$(affine-cli create_doc '{"title":"My Feature — Design Spec"}')
 DOC_ID=$(echo "$RESULT" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['docId'])")
 
 # 3. Write content
@@ -169,9 +168,6 @@ affine-cli move_doc "{\"docId\":\"$DOC_ID\",\"toParentDocId\":\"folder-doc-id\"}
 
 # 5. Publish
 affine-cli publish_doc "{\"docId\":\"$DOC_ID\"}"
-
-# 6. Post link to channel
-echo "https://affine.workisboring.com/workspace/796627b0-76b9-4f20-8741-aa018f9327be/$DOC_ID"
 ```
 
 ### List attachments in a doc
@@ -191,8 +187,7 @@ affine-cli download_attachment '{"docId":"abc123","name":"report.pdf","outputPat
 
 ## Notes
 
-- Workspace ID defaults to DD workspace (796627b0) via ~/.kiro/affine-env
-- Always use affine.workisboring.com links when sharing with the Founder
+- Configure your workspace ID in `~/.affine-env` (see repo README)
 - `export_doc_markdown` returns JSON — always parse it, don't treat output as raw markdown
 - `find_and_replace` field is `search` (not `find`, not `old_markdown`)
 - For large doc rewrites, use `replace_doc_with_markdown` — it replaces the entire body
