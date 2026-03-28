@@ -28,8 +28,10 @@ for i in "$@"; do
   fi
 done
 
-# Resolve server path relative to this script
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve server path relative to this script (follow symlinks for npm installs)
+_src="${BASH_SOURCE[0]}"
+while [ -L "$_src" ]; do _src="$(readlink "$_src")"; [[ "$_src" != /* ]] && _src="$(dirname "${BASH_SOURCE[0]}")/$_src"; done
+SCRIPT_DIR="$(cd "$(dirname "$_src")" && pwd)"
 SERVER="$SCRIPT_DIR/server/index.js"
 
 if [[ ! -f "$SERVER" ]]; then
