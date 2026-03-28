@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
-# affine-cli — call affine-mcp-server tools via one-shot MCP JSON-RPC.
+# affine-cli — call AFFiNE tools via one-shot MCP JSON-RPC.
 # Standalone: no external dependencies. Bundled server in ./server/index.js.
 #
 # Usage: affine-cli <tool_name> '<json_args>'
-#        affine-cli write_doc_from_markdown '{"docId":"abc"}' --file /path/to/doc.md
+#        affine-cli replace_doc_with_markdown '{"docId":"abc"}' --file /path/to/doc.md
 #
 # --file flag: reads file content and injects as "markdown" field in args.
+#
+# Config (env vars or config file):
+#   AFFINE_BASE_URL      — your AFFiNE instance URL
+#   AFFINE_API_TOKEN     — your API token
+#   AFFINE_WORKSPACE_ID  — your workspace ID
+#
+# Config file locations (first found wins):
+#   ~/.affine-env          — generic location (recommended for new installs)
+#   ~/.kiro/affine-env     — legacy location (AgentDeck / Kiro users)
 
 set -euo pipefail
 
@@ -29,9 +38,13 @@ if [[ ! -f "$SERVER" ]]; then
   exit 1
 fi
 
-# Load env from dedicated config file
-if [ -z "${AFFINE_BASE_URL:-}" ] && [ -f "$HOME/.kiro/affine-env" ]; then
-  source "$HOME/.kiro/affine-env"
+# Load env from config file (first found wins; env vars already set take precedence)
+if [ -z "${AFFINE_BASE_URL:-}" ]; then
+  if [ -f "$HOME/.affine-env" ]; then
+    source "$HOME/.affine-env"
+  elif [ -f "$HOME/.kiro/affine-env" ]; then
+    source "$HOME/.kiro/affine-env"
+  fi
 fi
 
 # Build and send JSON-RPC via python (handles quoting + response parsing)

@@ -23,7 +23,7 @@ chmod +x /usr/local/bin/affine-cli
 
 ## Configure
 
-Create `~/.kiro/affine-env` (see `affine-env.example`):
+Create `~/.affine-env` (see `affine-env.example`):
 
 ```bash
 export AFFINE_BASE_URL=https://your-affine-instance.com
@@ -36,6 +36,8 @@ Or pass env vars directly:
 ```bash
 AFFINE_BASE_URL=https://... AFFINE_API_TOKEN=... affine-cli list_workspace_tree '{}'
 ```
+
+> **Config file locations** (first found wins): `~/.affine-env` → `~/.kiro/affine-env`
 
 ## Usage
 
@@ -91,13 +93,15 @@ docker run -e AFFINE_BASE_URL=... -e AFFINE_API_TOKEN=... myimage affine-cli lis
 
 ## Credential File
 
-`~/.kiro/affine-env` (see `affine-env.example` for template):
+`~/.affine-env` (see `affine-env.example` for template):
 
 ```bash
 export AFFINE_BASE_URL=https://your-affine-instance.com
 export AFFINE_API_TOKEN=your-api-token
 export AFFINE_WORKSPACE_ID=your-workspace-id
 ```
+
+> If you use Kiro/AgentDeck, `~/.kiro/affine-env` also works — the script checks both locations.
 
 ## Skill / AI Agent Usage
 
