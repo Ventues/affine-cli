@@ -13,8 +13,7 @@
 #   AFFINE_WORKSPACE_ID  — your workspace ID
 #
 # Config file locations (first found wins):
-#   ~/.affine-env          — generic location (recommended for new installs)
-#   ~/.kiro/affine-env     — legacy location (AgentDeck / Kiro users)
+#   ~/.affine-env          — recommended
 
 set -euo pipefail
 

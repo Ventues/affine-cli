@@ -37,8 +37,6 @@ Or pass env vars directly:
 AFFINE_BASE_URL=https://... AFFINE_API_TOKEN=... affine-cli list_workspace_tree '{}'
 ```
 
-> **Config file locations** (first found wins): `~/.affine-env` → `~/.kiro/affine-env`
-
 ## Usage
 
 ```bash
@@ -73,7 +71,7 @@ affine-cli move_doc '{"docId":"abc123","toParentDocId":"folder-id"}'
 affine-cli publish_doc '{"docId":"abc123"}'
 ```
 
-See `SKILL.md` for the full tool reference with all 62 tools.
+See `SKILL.md` for the full tool reference.
 
 ## Docker / Container
 
@@ -101,8 +99,6 @@ export AFFINE_API_TOKEN=your-api-token
 export AFFINE_WORKSPACE_ID=your-workspace-id
 ```
 
-> If you use Kiro/AgentDeck, `~/.kiro/affine-env` also works — the script checks both locations.
+## AI Agent Usage
 
-## Skill / AI Agent Usage
-
-`SKILL.md` in this repo is a ready-to-use skill doc for AI agents (Kiro, Claude, etc.). Copy it into your agent's skill directory and it will know how to use every tool correctly — including common wrong names to avoid.
+`SKILL.md` in this repo is a ready-to-use skill doc for AI agents (Claude, GPT, etc.). Copy it into your agent's skill directory and it will know how to use every tool correctly — including common wrong names to avoid.
