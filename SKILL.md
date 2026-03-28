@@ -16,11 +16,9 @@ Use `affine-cli` via execute_bash for all AFFiNE operations.
 affine-cli <tool_name> '<json_args>'
 ```
 
-## Tool Name Reference
+## Tool Reference
 
-The tool names below are the ACTUAL names. Do not guess — use this list.
-
-| What you want to do | Correct tool name |
+| What you want to do | Tool name |
 |---|---|
 | Read doc as markdown | `export_doc_markdown` |
 | Replace entire doc body | `replace_doc_with_markdown` |
@@ -31,14 +29,6 @@ The tool names below are the ACTUAL names. Do not guess — use this list.
 | Move doc to folder | `move_doc` |
 | Create comment | `create_comment` |
 | Reply to comment | `create_comment` (no separate reply tool) |
-
-**Common wrong names (do NOT use):**
-- ~~`read_doc_as_markdown`~~ → use `export_doc_markdown`
-- ~~`write_doc_from_markdown`~~ → use `replace_doc_with_markdown`
-- ~~`update_doc_markdown`~~ → use `find_and_replace`
-- ~~`list_folder_tree`~~ → use `list_workspace_tree`
-- ~~`add_doc_to_folder`~~ → use `move_doc`
-- ~~`reply_to_comment`~~ → use `create_comment`
 
 ## Common Operations
 
