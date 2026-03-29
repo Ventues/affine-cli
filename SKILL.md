@@ -28,7 +28,7 @@ affine-cli <tool_name> '<json_args>'
 | List folder/workspace tree | `list_workspace_tree` |
 | Move doc to folder | `move_doc` |
 | Create comment | `create_comment` |
-| Reply to comment | `create_comment` (no separate reply tool) |
+| Reply to comment | `reply_to_comment` |
 
 ## Common Operations
 
@@ -108,6 +108,11 @@ affine-cli create_comment '{"docId":"abc123","content":"My comment"}'
 ### List comments
 ```bash
 affine-cli list_comments '{"docId":"abc123"}'
+```
+
+### Reply to a comment
+```bash
+affine-cli reply_to_comment '{"commentId":"comment-uuid","content":"My reply"}'
 ```
 
 ### Resolve a comment
