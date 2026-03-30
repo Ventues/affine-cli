@@ -28,6 +28,61 @@ if [ -z "${AFFINE_BASE_URL:-}" ]; then
   fi
 fi
 
+# --- help: print tool usage/schema from the bundled MCP server ---
+if [[ "$TOOL" == "help" || "$TOOL" == "--help" ]]; then
+  HELP_TOOL="${2:-}"
+  # Resolve server path
+  _src="${BASH_SOURCE[0]}"
+  while [ -L "$_src" ]; do _src="$(readlink "$_src")"; [[ "$_src" != /* ]] && _src="$(dirname "${BASH_SOURCE[0]}")/$_src"; done
+  _DIR="$(cd "$(dirname "$_src")" && pwd)"
+  _SRV="$_DIR/server/index.js"
+  exec python3 -c "
+import json, sys, subprocess
+tool_filter = sys.argv[1]
+server = sys.argv[2]
+msgs = [
+    json.dumps({'jsonrpc':'2.0','id':1,'method':'initialize','params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'affine-cli','version':'1.0.0'}}}),
+    json.dumps({'jsonrpc':'2.0','method':'notifications/initialized'}),
+    json.dumps({'jsonrpc':'2.0','id':2,'method':'tools/list','params':{}}),
+]
+proc = subprocess.Popen(['node', server], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+stdout, _ = proc.communicate(input=('\n'.join(msgs) + '\n').encode(), timeout=15)
+for line in stdout.decode().strip().split('\n'):
+    try:
+        r = json.loads(line.strip())
+        if r.get('id') != 2: continue
+        tools = r.get('result',{}).get('tools',[])
+        if not tool_filter:
+            for t in sorted(tools, key=lambda x: x['name']):
+                print(f\"  {t['name']:35s} {t.get('description','')[:70]}\")
+            print(f'\n{len(tools)} tools available. Use: affine-cli help <tool_name>')
+        else:
+            matches = [t for t in tools if t['name'] == tool_filter]
+            if not matches:
+                close = [t['name'] for t in tools if tool_filter in t['name']]
+                print(f'Tool \"{tool_filter}\" not found.', file=sys.stderr)
+                if close: print(f'Did you mean: {\", \".join(close)}?', file=sys.stderr)
+                sys.exit(1)
+            t = matches[0]
+            print(f\"Tool: {t['name']}\")
+            print(f\"Description: {t.get('description','')}\")
+            props = t.get('inputSchema',{}).get('properties',{})
+            req = t.get('inputSchema',{}).get('required',[])
+            if props:
+                print(f'Parameters:')
+                for k,v in props.items():
+                    r_mark = ' (required)' if k in req else ''
+                    desc = v.get('description','')
+                    typ = v.get('type','')
+                    print(f\"  {k}: {typ}{r_mark}{' — ' + desc if desc else ''}\")
+            else:
+                print('Parameters: none')
+            print(f\"\\nUsage: affine-cli {t['name']} '{{...}}'\")
+    except json.JSONDecodeError: pass
+" "$HELP_TOOL" "$_SRV"
+  exit $?
+fi
+
 # --- setup_token: sign in with email+password, generate API token ---
 if [[ "$TOOL" == "setup_token" ]]; then
   ARGS="${2:-\{\}}"
