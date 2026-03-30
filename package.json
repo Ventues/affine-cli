@@ -1,0 +1,64 @@
+{
+  "name": "affine-mcp-server",
+  "version": "1.5.0",
+  "forkVersion": 8,
+  "private": false,
+  "type": "module",
+  "description": "Model Context Protocol server for AFFiNE - enables AI assistants to interact with AFFiNE workspaces, documents, and collaboration features.",
+  "author": "dawncr0w",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ventues/affine-mcp-server.git"
+  },
+  "keywords": [
+    "mcp",
+    "affine",
+    "model-context-protocol",
+    "ai",
+    "claude",
+    "knowledge-base"
+  ],
+  "main": "dist/index.js",
+  "bin": {
+    "affine-mcp": "bin/affine-mcp"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "tsx --test test/integration.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^2.0.4",
+    "@modelcontextprotocol/sdk": "^1.17.2",
+    "dotenv": "^17.3.1",
+    "form-data": "^4.0.4",
+    "fractional-indexing": "^3.2.0",
+    "markdown-it": "^14.1.1",
+    "node-fetch": "^3.3.2",
+    "socket.io-client": "^4.8.1",
+    "undici": "^6.19.8",
+    "yjs": "^13.6.27",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^20.14.11",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}

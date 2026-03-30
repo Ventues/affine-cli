@@ -1,3 +1,5 @@
 .kiro/affine-env
 affine-env
 *.env
+node_modules/
+dist/

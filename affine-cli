@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # affine-cli — call AFFiNE tools via one-shot MCP JSON-RPC.
-# Standalone: no external dependencies. Bundled server in ./server/index.js.
+# Standalone: no external dependencies. Server in ./dist/index.js (built from src/).
 #
 # Usage: affine-cli <tool_name> '<json_args>'
 #        affine-cli replace_doc_with_markdown '{"docId":"abc"}' --file /path/to/doc.md
@@ -35,7 +35,7 @@ if [[ "$TOOL" == "help" || "$TOOL" == "--help" ]]; then
   _src="${BASH_SOURCE[0]}"
   while [ -L "$_src" ]; do _src="$(readlink "$_src")"; [[ "$_src" != /* ]] && _src="$(dirname "${BASH_SOURCE[0]}")/$_src"; done
   _DIR="$(cd "$(dirname "$_src")" && pwd)"
-  _SRV="$_DIR/server/index.js"
+  _SRV="$_DIR/dist/index.js"
   exec python3 -c "
 import json, sys, subprocess
 tool_filter = sys.argv[1]
@@ -239,7 +239,7 @@ done
 _src="${BASH_SOURCE[0]}"
 while [ -L "$_src" ]; do _src="$(readlink "$_src")"; [[ "$_src" != /* ]] && _src="$(dirname "${BASH_SOURCE[0]}")/$_src"; done
 SCRIPT_DIR="$(cd "$(dirname "$_src")" && pwd)"
-SERVER="$SCRIPT_DIR/server/index.js"
+SERVER="$SCRIPT_DIR/dist/index.js"
 
 if [[ ! -f "$SERVER" ]]; then
   echo "Error: bundled server not found at $SERVER" >&2
