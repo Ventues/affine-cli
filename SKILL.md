@@ -26,71 +26,33 @@ affine-cli <tool_name> '<json_args>'
 | Generate personal access token | `generate_access_token` |
 | List access tokens | `list_access_tokens` |
 | Revoke access token | `revoke_access_token` |
-| Update user profile | `update_profile` |
-| Update user settings | `update_settings` |
 | **Documents** | |
 | Create a new doc | `create_doc` |
 | Read doc as markdown | `read_doc_as_markdown` |
-| Read doc blocks (WebSocket) | `read_doc` |
-| Get doc metadata (GraphQL) | `get_doc` |
 | Replace entire doc body | `write_doc_from_markdown` |
 | Partial update (str_replace style) | `update_doc_markdown` |
-| Append blocks to doc | `append_block` |
-| Append paragraph | `append_paragraph` |
-| Update a block in-place | `update_block` |
-| Delete a block | `delete_block` |
-| Move/reorder a block | `move_block` |
 | Rename doc | `update_doc_title` |
 | Delete doc | `delete_doc` |
 | Search docs in workspace | `search_docs` |
 | Search blocks within a doc | `search_doc_blocks` |
 | List docs in workspace | `list_docs` |
-| Recent docs | `recent_docs` |
 | Publish doc (make public) | `publish_doc` |
 | Revoke public access | `revoke_doc` |
 | List doc history | `list_histories` |
-| Recover doc to timestamp | `recover_doc` |
 | **Folders & Organization** | |
 | List full folder tree | `list_folder_tree` |
 | List folder children | `list_folder_children` |
 | Create folder | `create_folder` |
-| Rename folder | `rename_folder` |
 | Move docs to folder | `move_docs` |
 | Add doc link to folder | `add_doc_to_folder` |
 | Move folder/doc to parent | `move_to_folder` |
-| Remove from folder | `remove_from_folder` |
 | **Comments** | |
 | Create comment on doc | `create_comment` |
 | List comments | `list_comments` |
 | Reply to comment | `reply_to_comment` |
-| Update comment | `update_comment` |
-| Delete comment | `delete_comment` |
 | Resolve/unresolve comment | `resolve_comment` |
-| **Kanban** | |
-| Create kanban board | `create_kanban_board` |
-| Read kanban board | `read_kanban_board` |
-| Add kanban card | `add_kanban_card` |
-| Move kanban card | `move_kanban_card` |
-| **Canvas (Edgeless)** | |
-| Add shape | `add_shape` |
-| Add text | `add_canvas_text` |
-| Add connector | `add_connector` |
-| Build graph/diagram | `build_graph` |
-| List canvas elements | `list_canvas_elements` |
-| **Workspaces** | |
-| List workspaces | `list_workspaces` |
-| Get workspace details | `get_workspace` |
-| Create workspace | `create_workspace` |
-| Update workspace | `update_workspace` |
-| Delete workspace | `delete_workspace` |
-| **Blobs & Files** | |
-| Upload blob | `upload_blob` |
-| Read blob | `read_blob` |
-| Delete blob | `delete_blob` |
-| Cleanup deleted blobs | `cleanup_blobs` |
-| **Notifications** | |
-| List notifications | `list_notifications` |
-| Mark all read | `read_all_notifications` |
+| **Attachments** | |
+| Download attachment from doc | `download_attachment` |
 
 ## Common Operations
 
