@@ -90692,6 +90692,34 @@ function registerDocTools(server, gql, defaults) {
             limit: numberType().optional()
         }
     }, searchDocsHandler);
+    // SEARCH DOCS GLOBAL
+    const searchDocsGlobalHandler = async (parsed) => {
+        const wsQuery = `query { workspaces { id } }`;
+        const wsData = await gql.request(wsQuery);
+        const workspaces = wsData.workspaces || [];
+        if (workspaces.length === 0) return mcp_text([]);
+        const searchQuery = `query SearchDocs($workspaceId:String!, $keyword:String!, $limit:Int){ workspace(id:$workspaceId){ searchDocs(input:{ keyword:$keyword, limit:$limit }){ docId title highlight createdAt updatedAt } } }`;
+        const results = await Promise.allSettled(
+            workspaces.map(async (ws) => {
+                const data = await gql.request(searchQuery, { workspaceId: ws.id, keyword: parsed.keyword, limit: parsed.limit });
+                const docs = data.workspace?.searchDocs || [];
+                return docs.map((d) => ({ ...d, workspaceId: ws.id }));
+            })
+        );
+        const combined = [];
+        for (const r of results) {
+            if (r.status === "fulfilled") combined.push(...r.value);
+        }
+        return mcp_text(combined);
+    };
+    server.registerTool("search_docs_global", {
+        title: "Search Documents (All Workspaces)",
+        description: "Search documents across all workspaces the user has access to. Returns results tagged with their workspaceId.",
+        inputSchema: {
+            keyword: stringType().min(1),
+            limit: numberType().optional()
+        }
+    }, searchDocsGlobalHandler);
     // RECENT DOCS
     const recentDocsHandler = async (parsed) => {
         const workspaceId = parsed.workspaceId || defaults.workspaceId;
