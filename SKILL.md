@@ -53,6 +53,12 @@ affine-cli <tool_name> '<json_args>'
 | Resolve/unresolve comment | `resolve_comment` |
 | **Attachments** | |
 | Download attachment from doc | `download_attachment` |
+| **Block-Level Ops (fallback)** | |
+| Append blocks to doc | `append_block` |
+| Update a block in-place | `update_block` |
+| Delete a block | `delete_block` |
+| Move/reorder a block | `move_block` |
+| Read doc blocks (WebSocket) | `read_doc` |
 
 ## Common Operations
 
