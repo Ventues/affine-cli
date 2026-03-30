@@ -22,6 +22,7 @@ affine-cli <tool_name> '<json_args>'
 |---|---|
 | **Auth & Setup** | |
 | Bootstrap token from email+password | `setup_token` |
+| Upload avatar from local file | `upload_avatar` |
 | Get current signed-in user | `current_user` |
 | Generate personal access token | `generate_access_token` |
 | List access tokens | `list_access_tokens` |
