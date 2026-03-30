@@ -20,6 +20,7 @@ affine-cli <tool_name> '<json_args>'
 
 | What you want to do | Tool name |
 |---|---|
+| Bootstrap token from email+password | `setup_token` |
 | Read doc as markdown | `export_doc_markdown` |
 | Replace entire doc body | `replace_doc_with_markdown` |
 | Append markdown to doc | `append_markdown` |
@@ -31,6 +32,18 @@ affine-cli <tool_name> '<json_args>'
 | Reply to comment | `reply_to_comment` |
 
 ## Common Operations
+
+### Setup token (new account bootstrap)
+```bash
+# Sign in with email+password, generate an API token
+affine-cli setup_token '{"email":"user@example.com","password":"...","name":"my-token"}'
+
+# Same, but also write the token to ~/.affine-env
+affine-cli setup_token '{"email":"user@example.com","password":"...","writeEnv":true}'
+
+# baseUrl defaults to AFFINE_BASE_URL env var; override with:
+affine-cli setup_token '{"baseUrl":"https://affine.example.com","email":"...","password":"..."}'
+```
 
 ### Search docs
 ```bash

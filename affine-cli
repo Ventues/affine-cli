@@ -18,6 +18,95 @@
 set -euo pipefail
 
 TOOL="${1:?Usage: affine-cli <tool_name> '<json_args>'}"
+
+# Load env from config file (first found wins; env vars already set take precedence)
+if [ -z "${AFFINE_BASE_URL:-}" ]; then
+  if [ -f "$HOME/.affine-env" ]; then
+    source "$HOME/.affine-env"
+  elif [ -f "$HOME/.kiro/affine-env" ]; then
+    source "$HOME/.kiro/affine-env"
+  fi
+fi
+
+# --- setup_token: sign in with email+password, generate API token ---
+if [[ "$TOOL" == "setup_token" ]]; then
+  ARGS="${2:-\{\}}"
+  exec python3 -c "
+import json, sys, os
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+
+args = json.loads(sys.argv[1])
+base = os.environ.get('AFFINE_BASE_URL', args.get('baseUrl', '')).rstrip('/')
+email = args.get('email', '')
+password = args.get('password', '')
+token_name = args.get('name', 'affine-cli-token')
+write_env = args.get('writeEnv', False)
+
+if not base or not email or not password:
+    print('Error: baseUrl, email, and password are required', file=sys.stderr)
+    print('Usage: affine-cli setup_token \'{\"email\":\"...\",\"password\":\"...\"}\'', file=sys.stderr)
+    print('  baseUrl defaults to AFFINE_BASE_URL env var', file=sys.stderr)
+    sys.exit(1)
+
+# Step 1: sign in
+try:
+    req = Request(base + '/api/auth/sign-in', method='POST',
+                  data=json.dumps({'email': email, 'password': password}).encode(),
+                  headers={'Content-Type': 'application/json'})
+    resp = urlopen(req)
+except HTTPError as e:
+    body = e.read().decode('utf-8', errors='replace')
+    print(f'Sign-in failed: {e.code} {body}', file=sys.stderr)
+    sys.exit(1)
+
+cookies = []
+for h in resp.headers.get_all('Set-Cookie') or []:
+    cookies.append(h.split(';')[0].strip())
+if not cookies:
+    print('Sign-in succeeded but no session cookie received', file=sys.stderr)
+    sys.exit(1)
+cookie_header = '; '.join(cookies)
+
+# Step 2: generate access token via GraphQL
+gql = json.dumps({
+    'query': 'mutation(\$input: GenerateAccessTokenInput!){ generateUserAccessToken(input:\$input){ id name token } }',
+    'variables': {'input': {'name': token_name, 'expiresAt': None}}
+}).encode()
+req2 = Request(base + '/graphql', method='POST', data=gql,
+               headers={'Content-Type': 'application/json', 'Cookie': cookie_header})
+try:
+    resp2 = urlopen(req2)
+    result = json.loads(resp2.read().decode())
+except HTTPError as e:
+    body = e.read().decode('utf-8', errors='replace')
+    print(f'Token generation failed: {e.code} {body}', file=sys.stderr)
+    sys.exit(1)
+
+if 'errors' in result:
+    print(f'GraphQL error: {result[\"errors\"]}', file=sys.stderr)
+    sys.exit(1)
+
+token_data = result['data']['generateUserAccessToken']
+token = token_data['token']
+
+# Step 3: optionally write to ~/.affine-env
+if write_env:
+    env_path = os.path.expanduser('~/.affine-env')
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            lines = [l for l in f.readlines() if not l.strip().startswith('export AFFINE_API_TOKEN=')]
+    lines.append(f'export AFFINE_API_TOKEN={token}\n')
+    with open(env_path, 'w') as f:
+        f.writelines(lines)
+    print(f'Token written to {env_path}', file=sys.stderr)
+
+print(json.dumps(token_data, indent=2))
+" "$ARGS"
+  exit $?
+fi
+
 ARGS="${2:-\{\}}"
 FILE_PATH=""
 
@@ -37,15 +126,6 @@ SERVER="$SCRIPT_DIR/server/index.js"
 if [[ ! -f "$SERVER" ]]; then
   echo "Error: bundled server not found at $SERVER" >&2
   exit 1
-fi
-
-# Load env from config file (first found wins; env vars already set take precedence)
-if [ -z "${AFFINE_BASE_URL:-}" ]; then
-  if [ -f "$HOME/.affine-env" ]; then
-    source "$HOME/.affine-env"
-  elif [ -f "$HOME/.kiro/affine-env" ]; then
-    source "$HOME/.kiro/affine-env"
-  fi
 fi
 
 # Build and send JSON-RPC via python (handles quoting + response parsing)
