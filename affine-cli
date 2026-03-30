@@ -162,6 +162,66 @@ print(json.dumps(token_data, indent=2))
   exit $?
 fi
 
+# --- upload_avatar: upload a local image as user avatar ---
+if [[ "$TOOL" == "upload_avatar" ]]; then
+  ARGS="${2:-\{\}}"
+  exec python3 -c "
+import json, sys, os
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+
+args = json.loads(sys.argv[1])
+base = os.environ.get('AFFINE_BASE_URL', args.get('baseUrl', '')).rstrip('/')
+token = os.environ.get('AFFINE_API_TOKEN', args.get('token', ''))
+file_path = args.get('filePath', '')
+
+if not base or not token or not file_path:
+    print('Error: filePath is required, plus AFFINE_BASE_URL and AFFINE_API_TOKEN', file=sys.stderr)
+    print('Usage: affine-cli upload_avatar \'{\"filePath\":\"/path/to/avatar.png\"}\'', file=sys.stderr)
+    sys.exit(1)
+
+if not os.path.isfile(file_path):
+    print(f'Error: file not found: {file_path}', file=sys.stderr)
+    sys.exit(1)
+
+import mimetypes
+ct = mimetypes.guess_type(file_path)[0] or 'image/png'
+fname = os.path.basename(file_path)
+data = open(file_path, 'rb').read()
+
+boundary = '----AffineCliUpload'
+body = (
+    f'--{boundary}\r\n'
+    f'Content-Disposition: form-data; name=\"operations\"\r\n\r\n'
+    + json.dumps({'query':'mutation(\$avatar:Upload!){uploadAvatar(avatar:\$avatar){id name avatarUrl}}','variables':{'avatar':None}})
+    + f'\r\n--{boundary}\r\n'
+    f'Content-Disposition: form-data; name=\"map\"\r\n\r\n'
+    + json.dumps({'0':['variables.avatar']})
+    + f'\r\n--{boundary}\r\n'
+    f'Content-Disposition: form-data; name=\"0\"; filename=\"{fname}\"\r\n'
+    f'Content-Type: {ct}\r\n\r\n'
+).encode() + data + f'\r\n--{boundary}--\r\n'.encode()
+
+req = Request(base + '/graphql', method='POST', data=body, headers={
+    'Authorization': f'Bearer {token}',
+    'Content-Type': f'multipart/form-data; boundary={boundary}'
+})
+try:
+    resp = urlopen(req)
+    result = json.loads(resp.read().decode())
+except HTTPError as e:
+    print(f'Upload failed: {e.code} {e.read().decode(\"utf-8\",errors=\"replace\")}', file=sys.stderr)
+    sys.exit(1)
+
+if 'errors' in result:
+    print(f'GraphQL error: {result[\"errors\"]}', file=sys.stderr)
+    sys.exit(1)
+
+print(json.dumps(result['data']['uploadAvatar'], indent=2))
+" "$ARGS"
+  exit $?
+fi
+
 ARGS="${2:-\{\}}"
 FILE_PATH=""
 
