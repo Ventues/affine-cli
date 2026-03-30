@@ -90569,44 +90569,81 @@ function registerDocTools(server, gql, defaults) {
         }
     }
     const listDocsHandler = async (parsed) => {
+        // allWorkspaces mode: list across all accessible workspaces
+        if (parsed.allWorkspaces) {
+            const wsQuery = `query { workspaces { id } }`;
+            const wsData = await gql.request(wsQuery);
+            const workspaces = wsData.workspaces || [];
+            if (workspaces.length === 0) return mcp_text([]);
+            const listQuery = `query ListDocs($workspaceId: String!, $first: Int, $after: String){ workspace(id:$workspaceId){ docs(pagination:{first:$first, after:$after}){ pageInfo{ hasNextPage endCursor } edges{ node{ id workspaceId title summary public defaultRole createdAt updatedAt } } } } }`;
+            const results = await Promise.allSettled(
+                workspaces.map(async (ws) => {
+                    const allEdges = [];
+                    let after = undefined;
+                    let hasNextPage = true;
+                    while (hasNextPage) {
+                        const data = await gql.request(listQuery, { workspaceId: ws.id, first: 100, after });
+                        const page = data.workspace.docs;
+                        allEdges.push(...(page.edges || []));
+                        hasNextPage = page.pageInfo?.hasNextPage || false;
+                        after = page.pageInfo?.endCursor;
+                    }
+                    const trashedIds = await getTrashedDocIds(gql, ws.id);
+                    return allEdges
+                        .filter((e) => !trashedIds.has(e.node.id))
+                        .map((e) => ({ ...e.node, workspaceId: ws.id }));
+                })
+            );
+            const combined = [];
+            for (const r of results) {
+                if (r.status === "fulfilled") combined.push(...r.value);
+            }
+            return mcp_text(combined);
+        }
         const workspaceId = parsed.workspaceId || defaults.workspaceId;
         if (!workspaceId) {
             throw new Error("workspaceId is required. Provide it as a parameter or set AFFINE_WORKSPACE_ID in environment.");
         }
-        const query = `query ListDocs($workspaceId: String!, $first: Int, $offset: Int, $after: String){ workspace(id:$workspaceId){ docs(pagination:{first:$first, offset:$offset, after:$after}){ totalCount pageInfo{ hasNextPage endCursor } edges{ cursor node{ id workspaceId title summary public defaultRole createdAt updatedAt } } } } }`;
-        const data = await gql.request(query, { workspaceId, first: parsed.first, offset: parsed.offset, after: parsed.after });
-        const docs = data.workspace.docs;
+        const query = `query ListDocs($workspaceId: String!, $first: Int, $after: String){ workspace(id:$workspaceId){ docs(pagination:{first:$first, after:$after}){ totalCount pageInfo{ hasNextPage endCursor } edges{ cursor node{ id workspaceId title summary public defaultRole createdAt updatedAt } } } } }`;
+        // Auto-paginate to fetch all results (pageSize defaults to 100; if caller sets `first`, return one page only)
+        const pageSize = parsed.first ?? 100;
+        const allEdges = [];
+        let after = parsed.after;
+        let totalCount = 0;
+        while (true) {
+            const data = await gql.request(query, { workspaceId, first: pageSize, after });
+            const page = data.workspace.docs;
+            totalCount = page.totalCount ?? totalCount;
+            allEdges.push(...(page.edges || []));
+            if (!page.pageInfo?.hasNextPage || parsed.first !== undefined) break;
+            after = page.pageInfo.endCursor;
+        }
         // Enrich null titles by fetching individual doc metadata via GraphQL
-        const nullTitleEdges = docs.edges ? docs.edges.filter((e) => !e.node.title) : [];
+        const nullTitleEdges = allEdges.filter((e) => !e.node.title);
         if (nullTitleEdges.length > 0) {
             const getDocQuery = `query GetDoc($workspaceId:String!, $docId:String!){ workspace(id:$workspaceId){ doc(docId:$docId){ id title summary } } }`;
-            const results = await Promise.allSettled(nullTitleEdges.map((edge) => gql.request(getDocQuery, { workspaceId, docId: edge.node.id })));
-            results.forEach((result, i) => {
+            const enrichResults = await Promise.allSettled(nullTitleEdges.map((edge) => gql.request(getDocQuery, { workspaceId, docId: edge.node.id })));
+            enrichResults.forEach((result, i) => {
                 if (result.status === 'fulfilled' && result.value?.workspace?.doc) {
                     const doc = result.value.workspace.doc;
-                    if (doc.title)
-                        nullTitleEdges[i].node.title = doc.title;
-                    if (doc.summary)
-                        nullTitleEdges[i].node.summary = doc.summary;
+                    if (doc.title) nullTitleEdges[i].node.title = doc.title;
+                    if (doc.summary) nullTitleEdges[i].node.summary = doc.summary;
                 }
             });
         }
         // Filter out trashed docs
         const trashedIds = await getTrashedDocIds(gql, workspaceId);
-        if (trashedIds.size > 0 && docs.edges) {
-            docs.edges = docs.edges.filter((e) => !trashedIds.has(e.node.id));
-            docs.totalCount = Math.max(0, (docs.totalCount || 0) - trashedIds.size);
-        }
-        return mcp_text(docs);
+        const filteredEdges = trashedIds.size > 0 ? allEdges.filter((e) => !trashedIds.has(e.node.id)) : allEdges;
+        return mcp_text({ totalCount, edges: filteredEdges });
     };
     server.registerTool("list_docs", {
         title: "List Documents",
-        description: "List documents in a workspace (GraphQL).",
+        description: "List documents in a workspace. Auto-paginates to return all docs (default page size 100). Set allWorkspaces:true to list across all accessible workspaces (includes workspaceId in each result).",
         inputSchema: {
-            workspaceId: stringType().describe("Workspace ID (optional if default set).").optional(),
-            first: numberType().optional(),
-            offset: numberType().optional(),
-            after: stringType().optional()
+            workspaceId: stringType().describe("Workspace ID (optional if default set). Ignored when allWorkspaces is true.").optional(),
+            allWorkspaces: booleanType().optional().describe("If true, list docs across all workspaces. Each result includes its workspaceId."),
+            first: numberType().optional().describe("Page size for a single page (default: auto-paginate all). If set, returns only one page of this size."),
+            after: stringType().optional().describe("Cursor for cursor-based pagination (used with first).")
         }
     }, listDocsHandler);
     const getDocHandler = async (parsed) => {
@@ -90616,7 +90653,49 @@ function registerDocTools(server, gql, defaults) {
         }
         const query = `query GetDoc($workspaceId:String!, $docId:String!){ workspace(id:$workspaceId){ doc(docId:$docId){ id workspaceId title summary public defaultRole createdAt updatedAt } } }`;
         const data = await gql.request(query, { workspaceId, docId: parsed.docId });
-        return mcp_text(data.workspace.doc);
+        let docData = data.workspace.doc;
+        // Fallback: if not found in default workspace (null or all-null fields), search all other workspaces
+        if (!docData || (!docData.title && !docData.createdAt)) {
+            const wsQuery = `query { workspaces { id } }`;
+            const wsData = await gql.request(wsQuery);
+            const otherWorkspaces = (wsData.workspaces || []).filter(ws => ws.id !== workspaceId);
+            for (const ws of otherWorkspaces) {
+                const wsResult = await gql.request(query, { workspaceId: ws.id, docId: parsed.docId });
+                if (wsResult.workspace?.doc) {
+                    docData = wsResult.workspace.doc;
+                    break;
+                }
+            }
+        }
+        // If GraphQL returns null title, fall back to reading it from the CRDT via WebSocket
+        if (docData && !docData.title) {
+            const { endpoint, authHeaders } = getEndpointAndAuthHeaders();
+            const wsUrl = wsUrlFromGraphQLEndpoint(endpoint);
+            const socket = await connectWorkspaceSocket(wsUrl, authHeaders);
+            try {
+                const effectiveWsId = docData.workspaceId || workspaceId;
+                await joinWorkspace(socket, effectiveWsId);
+                const snapshot = await loadDoc(socket, effectiveWsId, parsed.docId);
+                if (snapshot.missing) {
+                    const ydoc = new Doc();
+                    applyUpdate(ydoc, Buffer.from(snapshot.missing, "base64"));
+                    const blocks = ydoc.getMap("blocks");
+                    const pageId = findBlockIdByFlavour(blocks, "affine:page");
+                    if (pageId) {
+                        const pageBlock = blocks.get(pageId);
+                        if (pageBlock) {
+                            const crdtTitle = asText(pageBlock.get("prop:title"));
+                            if (crdtTitle) docData.title = crdtTitle;
+                        }
+                    }
+                }
+            }
+            catch (_e) { /* best-effort; leave title as-is */ }
+            finally {
+                socket.disconnect();
+            }
+        }
+        return mcp_text(docData);
     };
     server.registerTool("get_doc", {
         title: "Get Document",
@@ -90765,7 +90844,23 @@ function registerDocTools(server, gql, defaults) {
         const socket = await connectWorkspaceSocket(wsUrl, authHeaders);
         try {
             await joinWorkspace(socket, workspaceId);
-            const snapshot = await loadDoc(socket, workspaceId, parsed.docId);
+            let snapshot = await loadDoc(socket, workspaceId, parsed.docId);
+            let effectiveWorkspaceId = workspaceId;
+            // Fallback: if not found in default workspace, try all other workspaces
+            if (!snapshot.missing) {
+                const wsQuery = `query { workspaces { id } }`;
+                const wsData = await gql.request(wsQuery);
+                const otherWorkspaces = (wsData.workspaces || []).filter(ws => ws.id !== workspaceId);
+                for (const ws of otherWorkspaces) {
+                    await joinWorkspace(socket, ws.id);
+                    const wsSnapshot = await loadDoc(socket, ws.id, parsed.docId);
+                    if (wsSnapshot.missing) {
+                        snapshot = wsSnapshot;
+                        effectiveWorkspaceId = ws.id;
+                        break;
+                    }
+                }
+            }
             if (!snapshot.missing) {
                 return mcp_text({
                     docId: parsed.docId,
@@ -90833,6 +90928,7 @@ function registerDocTools(server, gql, defaults) {
             }
             return mcp_text({
                 docId: parsed.docId,
+                workspaceId: effectiveWorkspaceId,
                 title: title || null,
                 exists: true,
                 blockCount: blockRows.length,
@@ -90863,7 +90959,23 @@ function registerDocTools(server, gql, defaults) {
         const socket = await connectWorkspaceSocket(wsUrl, authHeaders);
         try {
             await joinWorkspace(socket, workspaceId);
-            const snapshot = await loadDoc(socket, workspaceId, parsed.docId);
+            let snapshot = await loadDoc(socket, workspaceId, parsed.docId);
+            let effectiveWorkspaceId = workspaceId;
+            // Fallback: if not found in default workspace, try all other workspaces
+            if (!snapshot.missing) {
+                const wsQuery = `query { workspaces { id } }`;
+                const wsData = await gql.request(wsQuery);
+                const otherWorkspaces = (wsData.workspaces || []).filter(ws => ws.id !== workspaceId);
+                for (const ws of otherWorkspaces) {
+                    await joinWorkspace(socket, ws.id);
+                    const wsSnapshot = await loadDoc(socket, ws.id, parsed.docId);
+                    if (wsSnapshot.missing) {
+                        snapshot = wsSnapshot;
+                        effectiveWorkspaceId = ws.id;
+                        break;
+                    }
+                }
+            }
             if (!snapshot.missing) {
                 return mcp_text({ docId: parsed.docId, exists: false, markdown: "" });
             }
@@ -90880,7 +90992,7 @@ function registerDocTools(server, gql, defaults) {
             }
             const noteBlock = noteId ? blocks.get(noteId) : null;
             if (!noteBlock) {
-                return mcp_text({ docId: parsed.docId, exists: true, title, markdown: title ? `# ${title}\n` : "" });
+                return mcp_text({ docId: parsed.docId, workspaceId: effectiveWorkspaceId, exists: true, title, markdown: title ? `# ${title}\n` : "" });
             }
             const allChildIds = childIdsFrom(noteBlock.get("sys:children"));
             const totalBlocks = allChildIds.length;
@@ -90901,7 +91013,7 @@ function registerDocTools(server, gql, defaults) {
                         continue;
                     headings.push({ blockId: allChildIds[i], level, text: richTextToMarkdown(raw.get("prop:text")), blockIndex: i });
                 }
-                return mcp_text({ docId: parsed.docId, exists: true, title, totalBlocks, headings });
+                return mcp_text({ docId: parsed.docId, workspaceId: effectiveWorkspaceId, exists: true, title, totalBlocks, headings });
             }
             // Determine block subset if pagination/filter requested
             let selectedIds;
@@ -90915,7 +91027,7 @@ function registerDocTools(server, gql, defaults) {
                 selectedIds = allChildIds.slice(offset, offset + limit);
             }
             const { markdown, blockLineRanges } = blocksToMarkdownWithMap(blocks, noteBlock, selectedIds ? "" : title, selectedIds);
-            const result = { docId: parsed.docId, exists: true, title, markdown, totalBlocks };
+            const result = { docId: parsed.docId, workspaceId: effectiveWorkspaceId, exists: true, title, markdown, totalBlocks };
             if (selectedIds) {
                 result.blockOffset = parsed.blockOffset ?? 0;
                 result.blocksReturned = selectedIds.length;
