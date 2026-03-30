@@ -85,7 +85,8 @@ fi
 
 # --- setup_token: sign in with email+password, generate API token ---
 if [[ "$TOOL" == "setup_token" ]]; then
-  ARGS="${2:-\{\}}"
+  ARGS="${2:-}"
+  [ -z "$ARGS" ] && ARGS='{}'
   exec python3 -c "
 import json, sys, os
 from urllib.request import Request, urlopen
@@ -164,7 +165,8 @@ fi
 
 # --- upload_avatar: upload a local image as user avatar ---
 if [[ "$TOOL" == "upload_avatar" ]]; then
-  ARGS="${2:-\{\}}"
+  ARGS="${2:-}"
+  [ -z "$ARGS" ] && ARGS='{}'
   exec python3 -c "
 import json, sys, os
 from urllib.request import Request, urlopen
@@ -222,7 +224,8 @@ print(json.dumps(result['data']['uploadAvatar'], indent=2))
   exit $?
 fi
 
-ARGS="${2:-\{\}}"
+ARGS="${2:-}"
+[ -z "$ARGS" ] && ARGS='{}'
 FILE_PATH=""
 
 # Parse --file flag

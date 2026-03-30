@@ -90591,6 +90591,12 @@ function registerDocTools(server, gql, defaults) {
                 }
             });
         }
+        // Filter out trashed docs
+        const trashedIds = await getTrashedDocIds(gql, workspaceId);
+        if (trashedIds.size > 0 && docs.edges) {
+            docs.edges = docs.edges.filter((e) => !trashedIds.has(e.node.id));
+            docs.totalCount = Math.max(0, (docs.totalCount || 0) - trashedIds.size);
+        }
         return mcp_text(docs);
     };
     server.registerTool("list_docs", {
@@ -94158,6 +94164,30 @@ function generateNodeId() {
 }
 const FOLDERS_TABLE = "folders";
 const DELETED_FLAG = "$$DELETED";
+
+async function getTrashedDocIds(gql, workspaceId) {
+    const endpoint = gql.endpoint;
+    const authHeaders = gql.getAuthHeaders();
+    const wsUrl = wsUrlFromGraphQLEndpoint(endpoint);
+    const socket = await connectWorkspaceSocket(wsUrl, authHeaders);
+    try {
+        await joinWorkspace(socket, workspaceId);
+        const wsDoc = new Doc();
+        const snapshot = await loadDoc(socket, workspaceId, workspaceId);
+        if (snapshot.missing) applyUpdate(wsDoc, Buffer.from(snapshot.missing, 'base64'));
+        const wsMeta = wsDoc.getMap('meta');
+        const pages = wsMeta.get('pages');
+        const trashed = new Set();
+        if (pages) {
+            pages.forEach((m) => {
+                if (m.get && m.get('trash') === true) trashed.add(m.get('id'));
+            });
+        }
+        return trashed;
+    } finally {
+        socket.disconnect();
+    }
+}
 const RANDOM_SUFFIX_LEN = 32;
 // --- Fractional indexing (compatible with AFFiNE's generateFractionalIndexingKeyBetween) ---
 function randomPostfix(length = RANDOM_SUFFIX_LEN) {
@@ -94375,9 +94405,11 @@ function registerOrganizeTools(server, gql, defaults) {
     const listFolderTreeHandler = async (parsed) => {
         const ws = resolveWs(parsed);
         const all = await withFoldersDoc(gql, ws, (doc) => readAllEntries(doc));
-        const docIds = all.filter((e) => e.type === "doc").map((e) => e.data);
+        const trashedIds = await getTrashedDocIds(gql, ws);
+        const filtered = all.filter((e) => !(e.type === "doc" && trashedIds.has(e.data)));
+        const docIds = filtered.filter((e) => e.type === "doc").map((e) => e.data);
         const titleMap = await resolveDocTitles(gql, ws, docIds);
-        const tree = buildTree(all, titleMap);
+        const tree = buildTree(filtered, titleMap);
         return mcp_text(tree);
     };
     server.registerTool("list_folder_tree", {
@@ -94389,9 +94421,11 @@ function registerOrganizeTools(server, gql, defaults) {
     const listFolderChildrenHandler = async (parsed) => {
         const ws = resolveWs(parsed);
         const children = await withFoldersDoc(gql, ws, (doc) => getChildren(doc, parsed.folderId ?? null));
-        const docIds = children.filter((e) => e.type === "doc").map((e) => e.data);
+        const trashedIds = await getTrashedDocIds(gql, ws);
+        const filteredChildren = children.filter((e) => !(e.type === "doc" && trashedIds.has(e.data)));
+        const docIds = filteredChildren.filter((e) => e.type === "doc").map((e) => e.data);
         const titleMap = await resolveDocTitles(gql, ws, docIds);
-        const enriched = children.map((e) => {
+        const enriched = filteredChildren.map((e) => {
             if (e.type === "doc")
                 return { id: e.id, type: e.type, docId: e.data, title: titleMap.get(e.data) ?? null };
             if (e.type === "folder")
