@@ -90569,99 +90569,96 @@ function registerDocTools(server, gql, defaults) {
         }
     }
     const listDocsHandler = async (parsed) => {
-        // allWorkspaces mode: list across all accessible workspaces
-        if (parsed.allWorkspaces) {
-            const wsQuery = `query { workspaces { id } }`;
-            const wsData = await gql.request(wsQuery);
-            const workspaces = wsData.workspaces || [];
-            if (workspaces.length === 0) return mcp_text([]);
-            const listQuery = `query ListDocs($workspaceId: String!, $first: Int, $after: String){ workspace(id:$workspaceId){ docs(pagination:{first:$first, after:$after}){ pageInfo{ hasNextPage endCursor } edges{ node{ id workspaceId title summary public defaultRole createdAt updatedAt } } } } }`;
-            const results = await Promise.allSettled(
-                workspaces.map(async (ws) => {
-                    const allEdges = [];
-                    let after = undefined;
-                    let hasNextPage = true;
-                    while (hasNextPage) {
-                        const data = await gql.request(listQuery, { workspaceId: ws.id, first: 100, after });
-                        const page = data.workspace.docs;
-                        allEdges.push(...(page.edges || []));
-                        hasNextPage = page.pageInfo?.hasNextPage || false;
-                        after = page.pageInfo?.endCursor;
-                    }
-                    const trashedIds = await getTrashedDocIds(gql, ws.id);
-                    return allEdges
-                        .filter((e) => !trashedIds.has(e.node.id))
-                        .map((e) => ({ ...e.node, workspaceId: ws.id }));
-                })
-            );
-            const combined = [];
-            for (const r of results) {
-                if (r.status === "fulfilled") combined.push(...r.value);
+        // If workspaceId is explicitly provided, scope to that workspace only
+        if (parsed.workspaceId) {
+            const workspaceId = parsed.workspaceId;
+            const query = `query ListDocs($workspaceId: String!, $first: Int, $after: String){ workspace(id:$workspaceId){ docs(pagination:{first:$first, after:$after}){ totalCount pageInfo{ hasNextPage endCursor } edges{ cursor node{ id workspaceId title summary public defaultRole createdAt updatedAt } } } } }`;
+            const pageSize = parsed.first ?? 100;
+            const allEdges = [];
+            let after = parsed.after;
+            let totalCount = 0;
+            while (true) {
+                const data = await gql.request(query, { workspaceId, first: pageSize, after });
+                const page = data.workspace.docs;
+                totalCount = page.totalCount ?? totalCount;
+                allEdges.push(...(page.edges || []));
+                if (!page.pageInfo?.hasNextPage || parsed.first !== undefined) break;
+                after = page.pageInfo.endCursor;
             }
-            return mcp_text(combined);
+            const nullTitleEdges = allEdges.filter((e) => !e.node.title);
+            if (nullTitleEdges.length > 0) {
+                const getDocQuery = `query GetDoc($workspaceId:String!, $docId:String!){ workspace(id:$workspaceId){ doc(docId:$docId){ id title summary } } }`;
+                const enrichResults = await Promise.allSettled(nullTitleEdges.map((edge) => gql.request(getDocQuery, { workspaceId, docId: edge.node.id })));
+                enrichResults.forEach((result, i) => {
+                    if (result.status === 'fulfilled' && result.value?.workspace?.doc) {
+                        const doc = result.value.workspace.doc;
+                        if (doc.title) nullTitleEdges[i].node.title = doc.title;
+                        if (doc.summary) nullTitleEdges[i].node.summary = doc.summary;
+                    }
+                });
+            }
+            const trashedIds = await getTrashedDocIds(gql, workspaceId);
+            const filteredEdges = trashedIds.size > 0 ? allEdges.filter((e) => !trashedIds.has(e.node.id)) : allEdges;
+            return mcp_text({ totalCount, edges: filteredEdges });
         }
-        const workspaceId = parsed.workspaceId || defaults.workspaceId;
-        if (!workspaceId) {
-            throw new Error("workspaceId is required. Provide it as a parameter or set AFFINE_WORKSPACE_ID in environment.");
-        }
-        const query = `query ListDocs($workspaceId: String!, $first: Int, $after: String){ workspace(id:$workspaceId){ docs(pagination:{first:$first, after:$after}){ totalCount pageInfo{ hasNextPage endCursor } edges{ cursor node{ id workspaceId title summary public defaultRole createdAt updatedAt } } } } }`;
-        // Auto-paginate to fetch all results (pageSize defaults to 100; if caller sets `first`, return one page only)
-        const pageSize = parsed.first ?? 100;
-        const allEdges = [];
-        let after = parsed.after;
-        let totalCount = 0;
-        while (true) {
-            const data = await gql.request(query, { workspaceId, first: pageSize, after });
-            const page = data.workspace.docs;
-            totalCount = page.totalCount ?? totalCount;
-            allEdges.push(...(page.edges || []));
-            if (!page.pageInfo?.hasNextPage || parsed.first !== undefined) break;
-            after = page.pageInfo.endCursor;
-        }
-        // Enrich null titles by fetching individual doc metadata via GraphQL
-        const nullTitleEdges = allEdges.filter((e) => !e.node.title);
-        if (nullTitleEdges.length > 0) {
-            const getDocQuery = `query GetDoc($workspaceId:String!, $docId:String!){ workspace(id:$workspaceId){ doc(docId:$docId){ id title summary } } }`;
-            const enrichResults = await Promise.allSettled(nullTitleEdges.map((edge) => gql.request(getDocQuery, { workspaceId, docId: edge.node.id })));
-            enrichResults.forEach((result, i) => {
-                if (result.status === 'fulfilled' && result.value?.workspace?.doc) {
-                    const doc = result.value.workspace.doc;
-                    if (doc.title) nullTitleEdges[i].node.title = doc.title;
-                    if (doc.summary) nullTitleEdges[i].node.summary = doc.summary;
+        // No workspaceId: list across all accessible workspaces (each result includes workspaceId)
+        const wsQuery = `query { workspaces { id } }`;
+        const wsData = await gql.request(wsQuery);
+        const workspaces = wsData.workspaces || [];
+        if (workspaces.length === 0) return mcp_text([]);
+        const listQuery = `query ListDocs($workspaceId: String!, $first: Int, $after: String){ workspace(id:$workspaceId){ docs(pagination:{first:$first, after:$after}){ pageInfo{ hasNextPage endCursor } edges{ node{ id workspaceId title summary public defaultRole createdAt updatedAt } } } } }`;
+        const results = await Promise.allSettled(
+            workspaces.map(async (ws) => {
+                const allEdges = [];
+                let after = undefined;
+                let hasNextPage = true;
+                while (hasNextPage) {
+                    const data = await gql.request(listQuery, { workspaceId: ws.id, first: 100, after });
+                    const page = data.workspace.docs;
+                    allEdges.push(...(page.edges || []));
+                    hasNextPage = page.pageInfo?.hasNextPage || false;
+                    after = page.pageInfo?.endCursor;
                 }
-            });
+                const trashedIds = await getTrashedDocIds(gql, ws.id);
+                return allEdges
+                    .filter((e) => !trashedIds.has(e.node.id))
+                    .map((e) => ({ ...e.node, workspaceId: ws.id }));
+            })
+        );
+        const combined = [];
+        for (const r of results) {
+            if (r.status === "fulfilled") combined.push(...r.value);
         }
-        // Filter out trashed docs
-        const trashedIds = await getTrashedDocIds(gql, workspaceId);
-        const filteredEdges = trashedIds.size > 0 ? allEdges.filter((e) => !trashedIds.has(e.node.id)) : allEdges;
-        return mcp_text({ totalCount, edges: filteredEdges });
+        return mcp_text(combined);
     };
     server.registerTool("list_docs", {
         title: "List Documents",
-        description: "List documents in a workspace. Auto-paginates to return all docs (default page size 100). Set allWorkspaces:true to list across all accessible workspaces (includes workspaceId in each result).",
+        description: "List documents. When workspaceId is omitted, lists across all accessible workspaces (each result includes workspaceId). When workspaceId is provided, scopes to that workspace only. Auto-paginates to return all docs (default page size 100).",
         inputSchema: {
-            workspaceId: stringType().describe("Workspace ID (optional if default set). Ignored when allWorkspaces is true.").optional(),
-            allWorkspaces: booleanType().optional().describe("If true, list docs across all workspaces. Each result includes its workspaceId."),
+            workspaceId: stringType().describe("Workspace ID to scope the listing. Omit to list across all workspaces.").optional(),
             first: numberType().optional().describe("Page size for a single page (default: auto-paginate all). If set, returns only one page of this size."),
             after: stringType().optional().describe("Cursor for cursor-based pagination (used with first).")
         }
     }, listDocsHandler);
     const getDocHandler = async (parsed) => {
-        const workspaceId = parsed.workspaceId || defaults.workspaceId;
-        if (!workspaceId) {
-            throw new Error("workspaceId is required. Provide it as a parameter or set AFFINE_WORKSPACE_ID in environment.");
-        }
+        const hintWorkspaceId = parsed.workspaceId || defaults.workspaceId;
         const query = `query GetDoc($workspaceId:String!, $docId:String!){ workspace(id:$workspaceId){ doc(docId:$docId){ id workspaceId title summary public defaultRole createdAt updatedAt } } }`;
-        const data = await gql.request(query, { workspaceId, docId: parsed.docId });
-        let docData = data.workspace.doc;
-        // Fallback: if not found in default workspace (null or all-null fields), search all other workspaces
+        let docData = null;
+        const triedWorkspaces = new Set();
+        // Try hint workspace first (AFFINE_WORKSPACE_ID or explicit workspaceId)
+        if (hintWorkspaceId) {
+            triedWorkspaces.add(hintWorkspaceId);
+            const data = await gql.request(query, { workspaceId: hintWorkspaceId, docId: parsed.docId });
+            docData = data.workspace?.doc;
+        }
+        // If not found (or no hint), try all other workspaces
         if (!docData || (!docData.title && !docData.createdAt)) {
             const wsQuery = `query { workspaces { id } }`;
             const wsData = await gql.request(wsQuery);
-            const otherWorkspaces = (wsData.workspaces || []).filter(ws => ws.id !== workspaceId);
+            const otherWorkspaces = (wsData.workspaces || []).filter(ws => !triedWorkspaces.has(ws.id));
             for (const ws of otherWorkspaces) {
                 const wsResult = await gql.request(query, { workspaceId: ws.id, docId: parsed.docId });
-                if (wsResult.workspace?.doc) {
+                if (wsResult.workspace?.doc && (wsResult.workspace.doc.title || wsResult.workspace.doc.createdAt)) {
                     docData = wsResult.workspace.doc;
                     break;
                 }
@@ -90673,7 +90670,7 @@ function registerDocTools(server, gql, defaults) {
             const wsUrl = wsUrlFromGraphQLEndpoint(endpoint);
             const socket = await connectWorkspaceSocket(wsUrl, authHeaders);
             try {
-                const effectiveWsId = docData.workspaceId || workspaceId;
+                const effectiveWsId = docData.workspaceId || hintWorkspaceId;
                 await joinWorkspace(socket, effectiveWsId);
                 const snapshot = await loadDoc(socket, effectiveWsId, parsed.docId);
                 if (snapshot.missing) {
@@ -90705,18 +90702,36 @@ function registerDocTools(server, gql, defaults) {
             docId: DocId
         }
     }, getDocHandler);
-    // SEARCH DOCS (with server-side + client-side fallback)
+    // SEARCH DOCS (with server-side + client-side fallback; cross-workspace by default)
     const searchDocsHandler = async (parsed) => {
-        const workspaceId = parsed.workspaceId || defaults.workspaceId;
-        if (!workspaceId) {
-            throw new Error("workspaceId is required. Provide it as a parameter or set AFFINE_WORKSPACE_ID in environment.");
+        // No workspaceId: search across all accessible workspaces in parallel
+        if (!parsed.workspaceId) {
+            const wsQuery = `query { workspaces { id } }`;
+            const wsData = await gql.request(wsQuery);
+            const workspaces = wsData.workspaces || [];
+            if (workspaces.length === 0) return mcp_text([]);
+            const searchQuery = `query SearchDocs($workspaceId:String!, $keyword:String!, $limit:Int){ workspace(id:$workspaceId){ searchDocs(input:{ keyword:$keyword, limit:$limit }){ docId title highlight createdAt updatedAt } } }`;
+            const results = await Promise.allSettled(
+                workspaces.map(async (ws) => {
+                    const data = await gql.request(searchQuery, { workspaceId: ws.id, keyword: parsed.keyword, limit: parsed.limit });
+                    const docs = data.workspace?.searchDocs || [];
+                    return docs.map((d) => ({ ...d, workspaceId: ws.id }));
+                })
+            );
+            const combined = [];
+            for (const r of results) {
+                if (r.status === "fulfilled") combined.push(...r.value);
+            }
+            return mcp_text(combined);
         }
+        // workspaceId provided: scope to that workspace (server-side search with client-side fallback)
+        const workspaceId = parsed.workspaceId;
         try {
             const query = `query SearchDocs($workspaceId:String!, $keyword:String!, $limit:Int){ workspace(id:$workspaceId){ searchDocs(input:{ keyword:$keyword, limit:$limit }){ docId title highlight createdAt updatedAt } } }`;
             const data = await gql.request(query, { workspaceId, keyword: parsed.keyword, limit: parsed.limit });
             const results = data.workspace?.searchDocs;
             if (results && results.length > 0) {
-                return mcp_text(results);
+                return mcp_text(results.map(d => ({ ...d, workspaceId })));
             }
         }
         catch (error) {
@@ -90752,7 +90767,7 @@ function registerDocTools(server, gql, defaults) {
             })
                 .slice(0, parsed.limit || 20)
                 .map((doc) => ({
-                docId: doc.id, title: doc.title, summary: doc.summary,
+                docId: doc.id, title: doc.title, summary: doc.summary, workspaceId,
                 createdAt: doc.createdAt, updatedAt: doc.updatedAt
             }));
             return mcp_text(matched);
@@ -90764,41 +90779,13 @@ function registerDocTools(server, gql, defaults) {
     };
     server.registerTool("search_docs", {
         title: "Search Documents",
-        description: "Search documents in a workspace.",
+        description: "Search documents. When workspaceId is omitted, searches across all accessible workspaces (each result includes workspaceId). When workspaceId is provided, scopes to that workspace only.",
         inputSchema: {
-            workspaceId: stringType().optional(),
+            workspaceId: stringType().optional().describe("Workspace ID to scope the search. Omit to search across all workspaces."),
             keyword: stringType().min(1),
             limit: numberType().optional()
         }
     }, searchDocsHandler);
-    // SEARCH DOCS GLOBAL
-    const searchDocsGlobalHandler = async (parsed) => {
-        const wsQuery = `query { workspaces { id } }`;
-        const wsData = await gql.request(wsQuery);
-        const workspaces = wsData.workspaces || [];
-        if (workspaces.length === 0) return mcp_text([]);
-        const searchQuery = `query SearchDocs($workspaceId:String!, $keyword:String!, $limit:Int){ workspace(id:$workspaceId){ searchDocs(input:{ keyword:$keyword, limit:$limit }){ docId title highlight createdAt updatedAt } } }`;
-        const results = await Promise.allSettled(
-            workspaces.map(async (ws) => {
-                const data = await gql.request(searchQuery, { workspaceId: ws.id, keyword: parsed.keyword, limit: parsed.limit });
-                const docs = data.workspace?.searchDocs || [];
-                return docs.map((d) => ({ ...d, workspaceId: ws.id }));
-            })
-        );
-        const combined = [];
-        for (const r of results) {
-            if (r.status === "fulfilled") combined.push(...r.value);
-        }
-        return mcp_text(combined);
-    };
-    server.registerTool("search_docs_global", {
-        title: "Search Documents (All Workspaces)",
-        description: "Search documents across all workspaces the user has access to. Returns results tagged with their workspaceId.",
-        inputSchema: {
-            keyword: stringType().min(1),
-            limit: numberType().optional()
-        }
-    }, searchDocsGlobalHandler);
     // RECENT DOCS
     const recentDocsHandler = async (parsed) => {
         const workspaceId = parsed.workspaceId || defaults.workspaceId;
