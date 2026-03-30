@@ -222,6 +222,22 @@ affine-cli download_attachment '{"docId":"abc123","outputPath":"/tmp/file.pdf"}'
 affine-cli download_attachment '{"docId":"abc123","name":"report.pdf","outputPath":"/tmp/report.pdf"}'
 ```
 
+## Discovering Tools & Parameters
+
+```bash
+# List all available tools
+affine-cli help
+
+# Show parameters and types for a specific tool
+affine-cli help <tool_name>
+
+# Fuzzy match — suggests tools if name is wrong
+affine-cli help doc
+# → "Did you mean: create_doc, list_docs, search_docs, ..."
+```
+
+Use `affine-cli help <tool_name>` when unsure about parameter names — it queries the live schema from the bundled server.
+
 ## Notes
 
 - Configure your workspace ID in `~/.affine-env` (see repo README)
