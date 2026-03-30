@@ -20,16 +20,77 @@ affine-cli <tool_name> '<json_args>'
 
 | What you want to do | Tool name |
 |---|---|
+| **Auth & Setup** | |
 | Bootstrap token from email+password | `setup_token` |
-| Read doc as markdown | `export_doc_markdown` |
-| Replace entire doc body | `replace_doc_with_markdown` |
-| Append markdown to doc | `append_markdown` |
-| Find and replace text | `find_and_replace` |
-| Search docs | `search_docs` |
-| List folder/workspace tree | `list_workspace_tree` |
-| Move doc to folder | `move_doc` |
-| Create comment | `create_comment` |
+| Get current signed-in user | `current_user` |
+| Generate personal access token | `generate_access_token` |
+| List access tokens | `list_access_tokens` |
+| Revoke access token | `revoke_access_token` |
+| Update user profile | `update_profile` |
+| Update user settings | `update_settings` |
+| **Documents** | |
+| Create a new doc | `create_doc` |
+| Read doc as markdown | `read_doc_as_markdown` |
+| Read doc blocks (WebSocket) | `read_doc` |
+| Get doc metadata (GraphQL) | `get_doc` |
+| Replace entire doc body | `write_doc_from_markdown` |
+| Partial update (str_replace style) | `update_doc_markdown` |
+| Append blocks to doc | `append_block` |
+| Append paragraph | `append_paragraph` |
+| Update a block in-place | `update_block` |
+| Delete a block | `delete_block` |
+| Move/reorder a block | `move_block` |
+| Rename doc | `update_doc_title` |
+| Delete doc | `delete_doc` |
+| Search docs in workspace | `search_docs` |
+| Search blocks within a doc | `search_doc_blocks` |
+| List docs in workspace | `list_docs` |
+| Recent docs | `recent_docs` |
+| Publish doc (make public) | `publish_doc` |
+| Revoke public access | `revoke_doc` |
+| List doc history | `list_histories` |
+| Recover doc to timestamp | `recover_doc` |
+| **Folders & Organization** | |
+| List full folder tree | `list_folder_tree` |
+| List folder children | `list_folder_children` |
+| Create folder | `create_folder` |
+| Rename folder | `rename_folder` |
+| Move docs to folder | `move_docs` |
+| Add doc link to folder | `add_doc_to_folder` |
+| Move folder/doc to parent | `move_to_folder` |
+| Remove from folder | `remove_from_folder` |
+| **Comments** | |
+| Create comment on doc | `create_comment` |
+| List comments | `list_comments` |
 | Reply to comment | `reply_to_comment` |
+| Update comment | `update_comment` |
+| Delete comment | `delete_comment` |
+| Resolve/unresolve comment | `resolve_comment` |
+| **Kanban** | |
+| Create kanban board | `create_kanban_board` |
+| Read kanban board | `read_kanban_board` |
+| Add kanban card | `add_kanban_card` |
+| Move kanban card | `move_kanban_card` |
+| **Canvas (Edgeless)** | |
+| Add shape | `add_shape` |
+| Add text | `add_canvas_text` |
+| Add connector | `add_connector` |
+| Build graph/diagram | `build_graph` |
+| List canvas elements | `list_canvas_elements` |
+| **Workspaces** | |
+| List workspaces | `list_workspaces` |
+| Get workspace details | `get_workspace` |
+| Create workspace | `create_workspace` |
+| Update workspace | `update_workspace` |
+| Delete workspace | `delete_workspace` |
+| **Blobs & Files** | |
+| Upload blob | `upload_blob` |
+| Read blob | `read_blob` |
+| Delete blob | `delete_blob` |
+| Cleanup deleted blobs | `cleanup_blobs` |
+| **Notifications** | |
+| List notifications | `list_notifications` |
+| Mark all read | `read_all_notifications` |
 
 ## Common Operations
 
@@ -54,7 +115,7 @@ affine-cli search_docs '{"query":"design doc"}'
 ### Read doc as markdown
 ```bash
 # Full content
-affine-cli export_doc_markdown '{"docId":"abc123"}'
+affine-cli read_doc_as_markdown '{"docId":"abc123"}'
 
 # Returns JSON: {"docId":"...","title":"...","markdown":"..."}
 # Extract markdown: ... | python3 -c "import sys,json; print(json.load(sys.stdin)['markdown'])"
@@ -71,10 +132,10 @@ affine-cli create_doc '{"title":"My Design Doc"}'
 ### Replace entire doc body with markdown
 ```bash
 # Inline content
-affine-cli replace_doc_with_markdown '{"docId":"abc123","markdown":"# Heading\n\nContent here."}'
+affine-cli write_doc_from_markdown '{"docId":"abc123","markdown":"# Heading\n\nContent here."}'
 
 # From a file (recommended for large docs — avoids shell quoting issues)
-affine-cli replace_doc_with_markdown "{\"docId\":\"abc123\",\"markdown\":$(python3 -c "import sys,json; print(json.dumps(open('/path/to/content.md').read()))")}"
+affine-cli write_doc_from_markdown "{\"docId\":\"abc123\",\"markdown\":$(python3 -c "import sys,json; print(json.dumps(open('/path/to/content.md').read()))")}"
 ```
 
 ### Append markdown to a doc
@@ -169,7 +230,7 @@ RESULT=$(affine-cli create_doc '{"title":"My Feature — Design Spec"}')
 DOC_ID=$(echo "$RESULT" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['docId'])")
 
 # 3. Write content
-affine-cli replace_doc_with_markdown "{\"docId\":\"$DOC_ID\",\"markdown\":\"# My Feature\n\n## Objective\n\nContent...\"}"
+affine-cli write_doc_from_markdown "{\"docId\":\"$DOC_ID\",\"markdown\":\"# My Feature\n\n## Objective\n\nContent...\"}"
 
 # 4. Move to folder
 affine-cli move_doc "{\"docId\":\"$DOC_ID\",\"toParentDocId\":\"folder-doc-id\"}"
@@ -196,7 +257,8 @@ affine-cli download_attachment '{"docId":"abc123","name":"report.pdf","outputPat
 ## Notes
 
 - Configure your workspace ID in `~/.affine-env` (see repo README)
-- `export_doc_markdown` returns JSON — always parse it, don't treat output as raw markdown
+- **⚠️ Silent namespace mismatch risk:** Writing to the wrong workspace succeeds silently — the doc is created, no error is thrown, but the Founder can't find it. Always verify `AFFINE_WORKSPACE_ID` matches the expected workspace (DD: `796627b0`, A5: `2f5e4d55`) before any write operation. If a doc you just created is "not found" by another agent, check the workspace ID first.
+- `read_doc_as_markdown` returns JSON — always parse it, don't treat output as raw markdown
 - `find_and_replace` field is `search` (not `find`, not `old_markdown`)
-- For large doc rewrites, use `replace_doc_with_markdown` — it replaces the entire body
+- For large doc rewrites, use `write_doc_from_markdown` — it replaces the entire body
 - For targeted edits, use `find_and_replace` with `dryRun:true` first to verify the match
