@@ -1,11 +1,28 @@
 import { io, Socket } from "socket.io-client";
+import https from "https";
 
 export type WorkspaceSocket = Socket<any, any>;
 const DEFAULT_WS_CLIENT_VERSION = process.env.AFFINE_WS_CLIENT_VERSION || process.env.AFFINE_SERVER_VERSION || '0.26.2';
 const WS_CONNECT_TIMEOUT_MS = Number(process.env.AFFINE_WS_CONNECT_TIMEOUT_MS || 10000);
 const WS_ACK_TIMEOUT_MS = Number(process.env.AFFINE_WS_ACK_TIMEOUT_MS || 10000);
 
+// Node.js 22+ exposes native WebSocket which doesn't support custom TLS options
+// (rejectUnauthorized, agent, etc.). Remove it so socket.io-client falls back to
+// the `ws` package which does support them. This is safe — we're a CLI tool, not a browser.
+if (typeof (globalThis as any).WebSocket !== 'undefined') {
+  delete (globalThis as any).WebSocket;
+}
+
+// Derive the original hostname from AFFINE_BASE_URL for SNI when using a tunnel.
+const AFFINE_HOSTNAME = (() => {
+  try { return new URL(process.env.AFFINE_BASE_URL || '').hostname; }
+  catch { return ''; }
+})();
+
 export function wsUrlFromGraphQLEndpoint(endpoint: string): string {
+  // Support AFFINE_WS_URL override for SSH tunnel / local proxy scenarios
+  const wsOverride = process.env.AFFINE_WS_URL;
+  if (wsOverride) return wsOverride;
   return endpoint
     .replace('https://', 'wss://')
     .replace('http://', 'ws://')
@@ -14,10 +31,19 @@ export function wsUrlFromGraphQLEndpoint(endpoint: string): string {
 
 export async function connectWorkspaceSocket(wsUrl: string, extraHeaders?: Record<string, string>): Promise<WorkspaceSocket> {
   return new Promise((resolve, reject) => {
+    const isLocalTunnel = wsUrl.includes('localhost') || wsUrl.includes('127.0.0.1');
+
+    // When connecting through an SSH tunnel to localhost, Caddy needs the correct
+    // SNI servername for TLS and the Host header for routing.
+    const agent = isLocalTunnel && AFFINE_HOSTNAME
+      ? new https.Agent({ rejectUnauthorized: false, servername: AFFINE_HOSTNAME })
+      : undefined;
+
     const socketOptions: any = {
       transports: ['websocket'],
       path: '/socket.io/',
-      autoConnect: true
+      autoConnect: true,
+      ...(agent && { agent }),
     };
     
     // Add auth token if present in headers
@@ -25,9 +51,13 @@ export async function connectWorkspaceSocket(wsUrl: string, extraHeaders?: Recor
       socketOptions.auth = { token: extraHeaders.Authorization.replace('Bearer ', '') };
     }
     
-    // Add extra headers if present
-    if (extraHeaders && Object.keys(extraHeaders).length > 0) {
-      socketOptions.extraHeaders = extraHeaders;
+    // Build extra headers — include Host header for tunnel routing
+    const headers: Record<string, string> = { ...(extraHeaders || {}) };
+    if (isLocalTunnel && AFFINE_HOSTNAME) {
+      headers['Host'] = AFFINE_HOSTNAME;
+    }
+    if (Object.keys(headers).length > 0) {
+      socketOptions.extraHeaders = headers;
     }
     
     const socket = io(wsUrl, socketOptions);
