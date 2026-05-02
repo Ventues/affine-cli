@@ -1,3 +1,8 @@
+---
+name: affine
+description: Read, write, search, and manage AFFiNE docs via affine-cli. Use for any AFFiNE document operations including design docs, briefings, comments, and folder management.
+---
+
 # AFFiNE CLI Skill
 
 Use `affine-cli` via execute_bash for all AFFiNE operations.
@@ -41,7 +46,7 @@ When `workspaceId` is provided, tools scope to that workspace only.
 | **Documents** | |
 | Create a new doc | `create_doc` |
 | Read doc as markdown | `read_doc_as_markdown` |
-| Replace entire doc body | `write_doc_from_markdown` |
+| Replace entire doc body or a block range | `write_doc_from_markdown` |
 | Partial update (str_replace style) | `update_doc_markdown` |
 | Rename doc | `update_doc_title` |
 | Delete doc | `delete_doc` |
@@ -114,14 +119,32 @@ affine-cli create_doc '{"title":"My Design Doc"}'
 # Returns: {"docId":"xxx","title":"..."} — extract docId for subsequent operations.
 ```
 
-### Replace entire doc body with markdown
+### Write markdown to a doc (full body or partial)
+
+`write_doc_from_markdown` replaces the entire body by default, but scopes down to a block range when you pass `blockIds`, `blockOffset`, or `blockLimit`. Everything outside the targeted range is preserved.
+
 ```bash
-# Inline content
+# Full-body replace (inline)
 affine-cli write_doc_from_markdown '{"docId":"abc123","markdown":"# Heading\n\nContent here."}'
 
-# From a file (recommended for large docs)
+# Full-body replace from a file (recommended for large docs)
 affine-cli write_doc_from_markdown '{"docId":"abc123"}' --file /path/to/content.md
+
+# Partial: replace specific blocks by ID (use read_doc to discover IDs)
+affine-cli write_doc_from_markdown '{"docId":"abc123","blockIds":["block-uuid-1","block-uuid-2"],"markdown":"## New section\n\nReplacement content."}'
+
+# Partial: replace a range of blocks (0-based index)
+affine-cli write_doc_from_markdown '{"docId":"abc123","blockOffset":5,"blockLimit":3,"markdown":"New content for blocks 5-7."}'
+
+# Preview without writing
+affine-cli write_doc_from_markdown '{"docId":"abc123","markdown":"...","dryRun":true}'
 ```
+
+Notes:
+- `blockIds` replaces the contiguous range from the first to last matched block ID (non-matching IDs in between are also replaced).
+- `blockOffset` + `blockLimit` replace `blockLimit` blocks starting at index `blockOffset`.
+- Attachment blocks appear as `📎 filename` lines — include them in your markdown or they will be dropped.
+- To discover block IDs, use `read_doc` (not `read_doc_as_markdown` — that one flattens IDs out).
 
 ### Append markdown to a doc
 ```bash
@@ -201,5 +224,6 @@ affine-cli help <tool_name>
 - Configure credentials in `~/.affine-env` (see repo README)
 - `AFFINE_WORKSPACE_ID` is a hint (try first), not a hard scope — tools fall back to other workspaces automatically
 - `read_doc_as_markdown` returns JSON — always parse it, don't treat output as raw markdown
-- For large doc rewrites, use `write_doc_from_markdown` — it replaces the entire body
-- For targeted edits, use `update_doc_markdown` with `dryRun:true` first to verify the match
+- For large doc rewrites, use `write_doc_from_markdown` without a block filter (replaces entire body)
+- For partial block-level edits, use `write_doc_from_markdown` with `blockIds`/`blockOffset`+`blockLimit`
+- For string-level find-and-replace, use `update_doc_markdown` with `dryRun:true` first to verify the match

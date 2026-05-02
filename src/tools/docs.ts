@@ -2152,10 +2152,11 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
     if (entry.blockIds && entry.blockIds.length > 0) {
       const idSet = new Set(entry.blockIds);
       const indices = existingChildIds.map((id, i) => idSet.has(id) ? i : -1).filter(i => i >= 0);
-      if (indices.length > 0) {
-        replaceStart = indices[0];
-        replaceEnd = indices[indices.length - 1] + 1;
+      if (indices.length === 0) {
+        throw new Error(`No matching blockIds found in doc ${entry.docId}. Provided blockIds: [${entry.blockIds.join(", ")}]. Use read_doc to discover valid block IDs for the doc's note children.`);
       }
+      replaceStart = indices[0];
+      replaceEnd = indices[indices.length - 1] + 1;
     } else if (hasBlockFilter) {
       replaceStart = entry.blockOffset ?? 0;
       replaceEnd = Math.min(replaceStart + (entry.blockLimit ?? existingChildIds.length), existingChildIds.length);
@@ -2170,6 +2171,7 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
       if (noteChildren.length > 0) noteChildren.delete(0, noteChildren.length);
       for (const cid of existingChildIds) removeBlockTree(blocks, cid);
     }
+    const blocksReplaced = idsToRemove.length > 0 ? idsToRemove.length : (hasBlockFilter ? 0 : existingChildIds.length);
 
     let md = entry.markdown;
     if (!hasBlockFilter) {
@@ -2200,7 +2202,13 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
       .catch(err => { console.error(`pushDocUpdate failed for doc ${entry.docId}:`, err.message); throw err; });
     await touchDocMeta(socket, workspaceId, entry.docId);
 
-    return { written: true, docId: entry.docId, blocksCreated: noteChildren.length };
+    return {
+      written: true,
+      docId: entry.docId,
+      blocksWritten: newIds.length,
+      blocksReplaced,
+      totalBlocks: noteChildren.length,
+    };
   }
 
   // ── write_doc_from_markdown (single or batch) ──────────────────────

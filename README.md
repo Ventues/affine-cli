@@ -83,7 +83,13 @@ affine-cli create_doc '{"title":"My Doc"}'
 # Replace entire doc body
 affine-cli write_doc_from_markdown '{"docId":"abc123","markdown":"# Hello\n\nContent."}'
 
-# Partial update (find and replace in markdown)
+# Partial replace by block IDs (preserves rest of doc)
+affine-cli write_doc_from_markdown '{"docId":"abc123","blockIds":["uuid1","uuid2"],"markdown":"## Replacement"}'
+
+# Partial replace by block range
+affine-cli write_doc_from_markdown '{"docId":"abc123","blockOffset":5,"blockLimit":3,"markdown":"..."}'
+
+# String-level find and replace
 affine-cli update_doc_markdown '{"docId":"abc123","oldText":"old text","newText":"new text"}'
 
 # Move doc to a folder
