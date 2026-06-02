@@ -1161,6 +1161,69 @@ export function registerDocTools(server: McpServer, gql: GraphQLClient, defaults
     }
   }
 
+  async function loadServerBlocks(socket: any, workspaceId: string, docId: string): Promise<Y.Map<any>> {
+    const serverDoc = new Y.Doc();
+    const snapshot = await loadDoc(socket, workspaceId, docId);
+    if (!snapshot.missing) throw new Error(`Document '${docId}' not found during write verification.`);
+    Y.applyUpdate(serverDoc, Buffer.from(snapshot.missing, "base64"));
+    return serverDoc.getMap("blocks") as Y.Map<any>;
+  }
+
+  async function verifyDocContentLanded(
+    socket: any,
+    workspaceId: string,
+    docId: string,
+    expectedWroteContent: boolean
+  ): Promise<number> {
+    const blocks = await loadServerBlocks(socket, workspaceId, docId);
+    const noteId = findBlockIdByFlavour(blocks, "affine:note");
+    if (!noteId) throw new Error(`Document '${docId}' has no note block during write verification.`);
+    const noteBlock = blocks.get(noteId) as Y.Map<any>;
+    const serverTotalBlocks = childIdsFrom(noteBlock?.get("sys:children")).length;
+    if (expectedWroteContent && serverTotalBlocks === 0) {
+      throw new Error(`Write verification FAILED for doc ${docId}: pushed content but `
+        + `server reports 0 content blocks. The write did not persist. Doc may be empty — `
+        + `re-run the write or check server/WebSocket health.`);
+    }
+    return serverTotalBlocks;
+  }
+
+  async function verifyBlocksExist(
+    socket: any,
+    workspaceId: string,
+    docId: string,
+    blockIds: string[]
+  ): Promise<number> {
+    const blocks = await loadServerBlocks(socket, workspaceId, docId);
+    for (const blockId of blockIds) {
+      if (!findBlockById(blocks, blockId)) {
+        throw new Error(`Write verification FAILED for doc ${docId}: block ${blockId} was not found server-side after write.`);
+      }
+    }
+    const noteId = findBlockIdByFlavour(blocks, "affine:note");
+    if (!noteId) return 0;
+    const noteBlock = blocks.get(noteId) as Y.Map<any>;
+    return childIdsFrom(noteBlock?.get("sys:children")).length;
+  }
+
+  async function verifyBlocksDeleted(
+    socket: any,
+    workspaceId: string,
+    docId: string,
+    blockIds: string[]
+  ): Promise<number> {
+    const blocks = await loadServerBlocks(socket, workspaceId, docId);
+    for (const blockId of blockIds) {
+      if (findBlockById(blocks, blockId)) {
+        throw new Error(`Write verification FAILED for doc ${docId}: block ${blockId} still exists server-side after delete.`);
+      }
+    }
+    const noteId = findBlockIdByFlavour(blocks, "affine:note");
+    if (!noteId) return 0;
+    const noteBlock = blocks.get(noteId) as Y.Map<any>;
+    return childIdsFrom(noteBlock?.get("sys:children")).length;
+  }
+
   /** Remove a block and all its descendants from the Y.Map */
   function removeBlockTree(blocks: Y.Map<any>, blockId: string): void {
     const block = blocks.get(blockId);
@@ -1240,8 +1303,9 @@ export function registerDocTools(server: McpServer, gql: GraphQLClient, defaults
       await pushDocUpdate(socket, workspaceId, normalized.docId, Buffer.from(delta).toString("base64"))
         .catch(err => { console.error(`pushDocUpdate failed for doc ${normalized.docId}:`, err.message); throw err; });
       await touchDocMeta(socket, workspaceId, normalized.docId);
+      const serverTotalBlocks = await verifyBlocksExist(socket, workspaceId, normalized.docId, [blockId]);
 
-      return { appended: true, blockId, flavour, blockType, normalizedType: normalized.type, legacyType: normalized.legacyType || null };
+      return { appended: true, blockId, flavour, blockType, normalizedType: normalized.type, legacyType: normalized.legacyType || null, verified: true, serverTotalBlocks };
     } finally {
       socket.disconnect();
     }
@@ -2201,6 +2265,7 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
     await pushDocUpdate(socket, workspaceId, entry.docId, Buffer.from(delta).toString("base64"))
       .catch(err => { console.error(`pushDocUpdate failed for doc ${entry.docId}:`, err.message); throw err; });
     await touchDocMeta(socket, workspaceId, entry.docId);
+    const serverTotalBlocks = await verifyDocContentLanded(socket, workspaceId, entry.docId, newIds.length > 0);
 
     return {
       written: true,
@@ -2208,6 +2273,8 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
       blocksWritten: newIds.length,
       blocksReplaced,
       totalBlocks: noteChildren.length,
+      verified: true,
+      serverTotalBlocks,
     };
   }
 
@@ -2527,7 +2594,8 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
         await pushDocUpdate(socket, workspaceId, parsed.docId, Buffer.from(delta).toString("base64"))
           .catch(err => { console.error(`pushDocUpdate failed for doc ${parsed.docId}:`, err.message); throw err; });
         await touchDocMeta(socket, workspaceId, parsed.docId);
-        return text({ updated: true, blockId: parsed.blockId, flavour });
+        const serverTotalBlocks = await verifyBlocksExist(socket, workspaceId, parsed.docId, [parsed.blockId!]);
+        return text({ updated: true, blockId: parsed.blockId, flavour, verified: true, serverTotalBlocks });
       }
 
       // Batch mode
@@ -2557,7 +2625,8 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
       await pushDocUpdate(socket, workspaceId, parsed.docId, Buffer.from(delta).toString("base64"))
         .catch(err => { console.error(`pushDocUpdate failed for doc ${parsed.docId}:`, err.message); throw err; });
       await touchDocMeta(socket, workspaceId, parsed.docId);
-      return text({ updated: updated.length, blocks: updated, skipped: skipped.length > 0 ? skipped : undefined });
+      const serverTotalBlocks = await verifyBlocksExist(socket, workspaceId, parsed.docId, updated.map(entry => entry.blockId));
+      return text({ updated: updated.length, blocks: updated, skipped: skipped.length > 0 ? skipped : undefined, verified: true, serverTotalBlocks });
     } finally {
       socket.disconnect();
     }
@@ -2624,7 +2693,8 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
         await pushDocUpdate(socket, workspaceId, parsed.docId, Buffer.from(delta).toString("base64"))
           .catch(err => { console.error(`pushDocUpdate failed for doc ${parsed.docId}:`, err.message); throw err; });
         await touchDocMeta(socket, workspaceId, parsed.docId);
-        return text({ deleted: true, blockId: parsed.blockId, flavour });
+        const serverTotalBlocks = await verifyBlocksDeleted(socket, workspaceId, parsed.docId, [parsed.blockId!]);
+        return text({ deleted: true, blockId: parsed.blockId, flavour, verified: true, serverTotalBlocks });
       }
 
       // Batch mode
@@ -2652,7 +2722,8 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
       await pushDocUpdate(socket, workspaceId, parsed.docId, Buffer.from(delta).toString("base64"))
         .catch(err => { console.error(`pushDocUpdate failed for doc ${parsed.docId}:`, err.message); throw err; });
       await touchDocMeta(socket, workspaceId, parsed.docId);
-      return text({ deleted: deleted.length, blockIds: deleted });
+      const serverTotalBlocks = await verifyBlocksDeleted(socket, workspaceId, parsed.docId, deleted);
+      return text({ deleted: deleted.length, blockIds: deleted, verified: true, serverTotalBlocks });
     } finally {
       socket.disconnect();
     }
@@ -2742,8 +2813,9 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
       await pushDocUpdate(socket, workspaceId, parsed.docId, Buffer.from(delta).toString("base64"))
         .catch(err => { console.error(`pushDocUpdate failed for doc ${parsed.docId}:`, err.message); throw err; });
       await touchDocMeta(socket, workspaceId, parsed.docId);
+      const serverTotalBlocks = await verifyBlocksExist(socket, workspaceId, parsed.docId, [parsed.blockId]);
 
-      return text({ moved: true, blockId: parsed.blockId, newParentId, insertIdx });
+      return text({ moved: true, blockId: parsed.blockId, newParentId, insertIdx, verified: true, serverTotalBlocks });
     } finally {
       socket.disconnect();
     }
@@ -2970,8 +3042,9 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
 
       // 8. Touch doc meta on same socket
       await touchDocMeta(socket, workspaceId, parsed.docId);
+      const serverTotalBlocks = await verifyDocContentLanded(socket, workspaceId, parsed.docId, newBlockIds.length > 0);
 
-      return text({ patched: true, docId: parsed.docId, blocksRemoved: affectedBlockIds.length, blocksCreated: newBlockIds.length });
+      return text({ patched: true, docId: parsed.docId, blocksRemoved: affectedBlockIds.length, blocksCreated: newBlockIds.length, verified: true, serverTotalBlocks });
     } finally {
       socket.disconnect();
     }
@@ -3243,6 +3316,8 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
         type: result.blockType || null,
         normalizedType: result.normalizedType,
         legacyType: result.legacyType,
+        verified: result.verified,
+        serverTotalBlocks: result.serverTotalBlocks,
       });
     }
 
@@ -3288,8 +3363,9 @@ Supports pagination with blockOffset/blockLimit, or blockIds to read specific bl
       await pushDocUpdate(socket, workspaceId, parsed.docId, Buffer.from(delta).toString("base64"))
         .catch(err => { console.error(`pushDocUpdate failed for doc ${parsed.docId}:`, err.message); throw err; });
       await touchDocMeta(socket, workspaceId, parsed.docId);
+      const serverTotalBlocks = await verifyBlocksExist(socket, workspaceId, parsed.docId, results.map(entry => entry.blockId));
 
-      return text({ appended: results.length, blocks: results });
+      return text({ appended: results.length, blocks: results, verified: true, serverTotalBlocks });
     } finally {
       socket.disconnect();
     }
